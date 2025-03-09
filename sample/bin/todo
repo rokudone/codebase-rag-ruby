@@ -1,0 +1,107 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "thor"
+require_relative "../lib/todo_app"
+
+module TodoApp
+  # コマンドラインインターフェース
+  class CLI < Thor
+    desc "add TITLE", "Todoを追加する"
+    option :description, aliases: "-d", desc: "Todoの説明"
+    def add(title)
+      description = options[:description] || ""
+      item = app.add_todo(title, description)
+      puts "Todoを追加しました: [#{item.id}] #{item.title}"
+    end
+
+    desc "list", "Todoの一覧を表示する"
+    option :all, aliases: "-a", type: :boolean, desc: "完了済みのTodoも表示する"
+    def list
+      items = options[:all] ? app.list_todos : app.list_todos(false)
+
+      if items.empty?
+        puts "Todoはありません"
+        return
+      end
+
+      puts "Todoの一覧:"
+      items.each do |item|
+        status = item.completed ? "[✓]" : "[ ]"
+        puts "#{status} [#{item.id}] #{item.title}"
+      end
+
+      puts "\n合計: #{items.size}件"
+    end
+
+    desc "show ID", "Todoの詳細を表示する"
+    def show(id)
+      item = app.get_todo(id)
+
+      if item.nil?
+        puts "指定されたIDのTodoは見つかりませんでした: #{id}"
+        return
+      end
+
+      status = item.completed ? "完了" : "未完了"
+      puts "ID: #{item.id}"
+      puts "タイトル: #{item.title}"
+      puts "説明: #{item.description}" unless item.description.empty?
+      puts "状態: #{status}"
+      puts "作成日時: #{item.created_at}"
+      puts "更新日時: #{item.updated_at}"
+    end
+
+    desc "toggle ID", "Todoの完了状態を切り替える"
+    def toggle(id)
+      result = app.toggle_todo(id)
+
+      if result.nil?
+        puts "指定されたIDのTodoは見つかりませんでした: #{id}"
+        return
+      end
+
+      status = result ? "完了" : "未完了"
+      item = app.get_todo(id)
+      puts "Todoの状態を変更しました: [#{item.id}] #{item.title} (#{status})"
+    end
+
+    desc "remove ID", "Todoを削除する"
+    def remove(id)
+      item = app.remove_todo(id)
+
+      if item.nil?
+        puts "指定されたIDのTodoは見つかりませんでした: #{id}"
+        return
+      end
+
+      puts "Todoを削除しました: [#{item.id}] #{item.title}"
+    end
+
+    desc "search KEYWORD", "Todoを検索する"
+    def search(keyword)
+      items = app.search_todos(keyword)
+
+      if items.empty?
+        puts "検索条件に一致するTodoはありませんでした: #{keyword}"
+        return
+      end
+
+      puts "検索結果:"
+      items.each do |item|
+        status = item.completed ? "[✓]" : "[ ]"
+        puts "#{status} [#{item.id}] #{item.title}"
+      end
+
+      puts "\n合計: #{items.size}件"
+    end
+
+    private
+
+    def app
+      @app ||= TodoApp::App.new
+    end
+  end
+end
+
+TodoApp::CLI.start(ARGV)
