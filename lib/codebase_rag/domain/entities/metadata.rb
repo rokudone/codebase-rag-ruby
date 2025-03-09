@@ -25,7 +25,7 @@ module CodebaseRag
         # @param chunk_count [Integer] チャンク数
         # @param source_dir [String] ソースディレクトリ
         # @param model_name [String] モデル名
-        def initialize(created_at, chunk_count, source_dir, model_name = "openai/text-embedding-3-small")
+        def initialize(created_at, chunk_count, source_dir, model_name = "openai/text-embedding-3-large")
           @created_at = created_at
           @chunk_count = chunk_count
           @source_dir = source_dir
