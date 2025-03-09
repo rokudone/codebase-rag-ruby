@@ -42,6 +42,18 @@ module CodebaseRag
         # @return [Integer] トークン数
         attr_reader :token_count
 
+        # @return [String, nil] 親チャンクのID
+        attr_accessor :parent_id
+
+        # @return [String, nil] 親チャンクの種類
+        attr_accessor :parent_type
+
+        # @return [String, nil] 親チャンクの名前
+        attr_accessor :parent_name
+
+        # @return [Array<String>, nil] 依存関係
+        attr_accessor :dependencies
+
         # 初期化
         # @param options [Hash] オプション
         # @option options [String] :id チャンクのID
@@ -55,6 +67,10 @@ module CodebaseRag
         # @option options [Integer] :part_number 分割された場合のパート番号
         # @option options [Integer] :total_parts 分割された場合の総パート数
         # @option options [String] :original_chunk_id 分割元のチャンクID
+        # @option options [String] :parent_id 親チャンクのID
+        # @option options [String] :parent_type 親チャンクの種類
+        # @option options [String] :parent_name 親チャンクの名前
+        # @option options [Array<String>] :dependencies 依存関係
         def initialize(options)
           @id = options[:id]
           @content = options[:content]
@@ -67,6 +83,10 @@ module CodebaseRag
           @part_number = options[:part_number]
           @total_parts = options[:total_parts]
           @original_chunk_id = options[:original_chunk_id]
+          @parent_id = options[:parent_id]
+          @parent_type = options[:parent_type]
+          @parent_name = options[:parent_name]
+          @dependencies = options[:dependencies] || []
           @token_count = calculate_token_count(@content)
         end
 
@@ -88,8 +108,24 @@ module CodebaseRag
             part_number: @part_number,
             total_parts: @total_parts,
             original_chunk_id: @original_chunk_id,
+            parent_id: @parent_id,
+            parent_type: @parent_type,
+            parent_name: @parent_name,
+            dependencies: @dependencies,
             token_count: @token_count
           }
+        end
+
+        # 親情報があるかどうか
+        # @return [Boolean] 親情報があるかどうか
+        def has_parent?
+          !@parent_id.nil? && !@parent_name.nil?
+        end
+
+        # 依存関係があるかどうか
+        # @return [Boolean] 依存関係があるかどうか
+        def has_dependencies?
+          @dependencies && @dependencies.any?
         end
 
         # JSONに変換
@@ -117,6 +153,10 @@ module CodebaseRag
             part_number: @part_number,
             total_parts: @total_parts,
             original_chunk_id: @original_chunk_id,
+            parent_id: @parent_id,
+            parent_type: @parent_type,
+            parent_name: @parent_name,
+            dependencies: @dependencies,
             token_count: @token_count
           }
         end

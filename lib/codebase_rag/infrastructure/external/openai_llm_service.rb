@@ -20,7 +20,7 @@ module CodebaseRag
         # 初期化
         # @param api_key [String] APIキー
         # @param model_name [String] モデル名
-        def initialize(api_key, model_name = "gpt-4o-mini")
+        def initialize(api_key, model_name = "gpt-4o")
           @api_key = api_key
           @model_name = model_name
         end

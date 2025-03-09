@@ -20,7 +20,7 @@ module CodebaseRag
         # 初期化
         # @param api_key [String] APIキー
         # @param model_name [String] モデル名
-        def initialize(api_key, model_name = "text-embedding-3-small")
+        def initialize(api_key, model_name = "text-embedding-3-large")
           @api_key = api_key
           @model_name = model_name
         end

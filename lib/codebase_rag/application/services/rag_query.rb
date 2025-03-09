@@ -13,6 +13,12 @@ module CodebaseRag
 
         # RAGシステムに質問する
         # @param options [Hash] オプション
+        # @option options [String] :question 質問
+        # @option options [String] :data_dir データディレクトリ
+        # @option options [Boolean] :evaluation_mode 評価モードかどうか
+        # @option options [String] :evaluation_log_file 評価ログファイルパス
+        # @option options [Boolean] :feedback_mode フィードバックモードかどうか
+        # @option options [String] :feedback_log_file フィードバックログファイルパス
         # @param embedding_service [CodebaseRag::Domain::Services::EmbeddingServiceInterface] エンベディングサービス
         # @param llm_service [CodebaseRag::Domain::Services::LLMServiceInterface] LLMサービス
         # @param vector_store_factory [Proc] ベクトルストアファクトリ関数
@@ -33,7 +39,13 @@ module CodebaseRag
           query_engine = CodebaseRag::Application::Services::QueryService.new(
             vector_store,
             embedding_service,
-            llm_service
+            llm_service,
+            {
+              evaluation_mode: options[:evaluation_mode] || false,
+              evaluation_log_file: options[:evaluation_log_file] || File.join(options[:data_dir], "evaluation.jsonl"),
+              feedback_mode: options[:feedback_mode] || false,
+              feedback_log_file: options[:feedback_log_file] || File.join(options[:data_dir], "feedback.jsonl")
+            }
           )
 
           # 質問処理

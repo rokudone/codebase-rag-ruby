@@ -149,8 +149,9 @@ module CodebaseRag
         # @param file_path [String] ファイルパス
         # @param lines [Array<String>] ファイルの行の配列
         # @param chunks [Array<CodebaseRag::Domain::Entities::CodeChunk>] チャンクの配列
+        # @param parent_info [Array, nil] 親情報 [id, type, name]
         # @return [void]
-        def extract_chunks_from_ast(node, file_path, lines, chunks)
+        def extract_chunks_from_ast(node, file_path, lines, chunks, parent_info = nil)
           return unless node.is_a?(Parser::AST::Node)
 
           case node.type
@@ -162,20 +163,38 @@ module CodebaseRag
               end_line = node.loc.last_line
               class_content = lines[(start_line - 1)..(end_line - 1)].join("\n")
 
-              chunks << CodebaseRag::Domain::Entities::CodeChunk.new(
-                id: generate_chunk_id(file_path, class_content, start_line, end_line),
+              # 依存関係の抽出
+              dependencies = extract_dependencies(node)
+
+              # クラスチャンクを作成
+              class_chunk_id = generate_chunk_id(file_path, class_content, start_line, end_line)
+
+              class_chunk = CodebaseRag::Domain::Entities::CodeChunk.new(
+                id: class_chunk_id,
                 content: class_content,
                 file_path: file_path,
                 start_line: start_line,
                 end_line: end_line,
                 type: "class",
                 name: class_name,
-                context: "Class #{class_name} in #{File.basename(file_path)}"
+                context: "Class #{class_name} in #{File.basename(file_path)}",
+                parent_id: parent_info ? parent_info[0] : nil,
+                parent_type: parent_info ? parent_info[1] : nil,
+                parent_name: parent_info ? parent_info[2] : nil,
+                dependencies: dependencies
               )
 
-              # クラス内のメソッドも抽出
+              chunks << class_chunk
+
+              # クラス内のメソッドも抽出（親情報を渡す）
               node.children[2]&.children&.each do |child|
-                extract_chunks_from_ast(child, file_path, lines, chunks)
+                extract_chunks_from_ast(
+                  child,
+                  file_path,
+                  lines,
+                  chunks,
+                  [class_chunk_id, "class", class_name]
+                )
               end
             end
           when :module
@@ -186,20 +205,38 @@ module CodebaseRag
               end_line = node.loc.last_line
               module_content = lines[(start_line - 1)..(end_line - 1)].join("\n")
 
-              chunks << CodebaseRag::Domain::Entities::CodeChunk.new(
-                id: generate_chunk_id(file_path, module_content, start_line, end_line),
+              # 依存関係の抽出
+              dependencies = extract_dependencies(node)
+
+              # モジュールチャンクを作成
+              module_chunk_id = generate_chunk_id(file_path, module_content, start_line, end_line)
+
+              module_chunk = CodebaseRag::Domain::Entities::CodeChunk.new(
+                id: module_chunk_id,
                 content: module_content,
                 file_path: file_path,
                 start_line: start_line,
                 end_line: end_line,
                 type: "module",
                 name: module_name,
-                context: "Module #{module_name} in #{File.basename(file_path)}"
+                context: "Module #{module_name} in #{File.basename(file_path)}",
+                parent_id: parent_info ? parent_info[0] : nil,
+                parent_type: parent_info ? parent_info[1] : nil,
+                parent_name: parent_info ? parent_info[2] : nil,
+                dependencies: dependencies
               )
 
-              # モジュール内のメソッドも抽出
+              chunks << module_chunk
+
+              # モジュール内のメソッドも抽出（親情報を渡す）
               node.children[1]&.children&.each do |child|
-                extract_chunks_from_ast(child, file_path, lines, chunks)
+                extract_chunks_from_ast(
+                  child,
+                  file_path,
+                  lines,
+                  chunks,
+                  [module_chunk_id, "module", module_name]
+                )
               end
             end
           when :def
@@ -209,6 +246,16 @@ module CodebaseRag
             end_line = node.loc.last_line
             method_content = lines[(start_line - 1)..(end_line - 1)].join("\n")
 
+            # 依存関係の抽出（メソッド内で呼び出している他のメソッドなど）
+            dependencies = extract_method_dependencies(node)
+
+            # コンテキスト情報を強化
+            context = if parent_info
+                        "Method #{method_name} in #{parent_info[1]} #{parent_info[2]} (#{File.basename(file_path)})"
+                      else
+                        "Method #{method_name} in #{File.basename(file_path)}"
+                      end
+
             chunks << CodebaseRag::Domain::Entities::CodeChunk.new(
               id: generate_chunk_id(file_path, method_content, start_line, end_line),
               content: method_content,
@@ -217,12 +264,16 @@ module CodebaseRag
               end_line: end_line,
               type: "method",
               name: method_name,
-              context: "Method #{method_name} in #{File.basename(file_path)}"
+              context: context,
+              parent_id: parent_info ? parent_info[0] : nil,
+              parent_type: parent_info ? parent_info[1] : nil,
+              parent_name: parent_info ? parent_info[2] : nil,
+              dependencies: dependencies
             )
           else
             # その他のノードは子ノードを再帰的に処理
             node.children.each do |child|
-              extract_chunks_from_ast(child, file_path, lines, chunks)
+              extract_chunks_from_ast(child, file_path, lines, chunks, parent_info)
             end
           end
         end
@@ -235,6 +286,73 @@ module CodebaseRag
 
           parent = extract_const_name(node.children[0])
           "#{parent}::#{node.children[1]}"
+        end
+
+        # クラスやモジュールの依存関係を抽出する
+        # @param node [Parser::AST::Node] ASTノード
+        # @return [Array<String>] 依存関係の配列
+        def extract_dependencies(node)
+          dependencies = []
+
+          # 継承関係の抽出
+          if node.type == :class && node.children[1]
+            if node.children[1].is_a?(Parser::AST::Node) && node.children[1].type == :const
+              superclass = extract_const_name(node.children[1])
+              dependencies << "inherits from #{superclass}" unless superclass.empty?
+            end
+          end
+
+          # includeやextendの抽出
+          body_node = node.type == :class ? node.children[2] : node.children[1]
+          if body_node.is_a?(Parser::AST::Node)
+            body_node.children.each do |child|
+              if child.is_a?(Parser::AST::Node) && child.type == :send
+                if [:include, :extend, :prepend].include?(child.children[1])
+                  if child.children[2].is_a?(Parser::AST::Node) && child.children[2].type == :const
+                    module_name = extract_const_name(child.children[2])
+                    dependencies << "#{child.children[1]}s #{module_name}" unless module_name.empty?
+                  end
+                end
+              end
+            end
+          end
+
+          dependencies
+        end
+
+        # メソッドの依存関係を抽出する
+        # @param node [Parser::AST::Node] ASTノード
+        # @return [Array<String>] 依存関係の配列
+        def extract_method_dependencies(node)
+          dependencies = []
+
+          # メソッド呼び出しの抽出
+          extract_method_calls(node, dependencies)
+
+          dependencies.uniq
+        end
+
+        # メソッド呼び出しを抽出する（再帰的）
+        # @param node [Parser::AST::Node] ASTノード
+        # @param dependencies [Array<String>] 依存関係の配列
+        # @return [void]
+        def extract_method_calls(node, dependencies)
+          return unless node.is_a?(Parser::AST::Node)
+
+          # メソッド呼び出し
+          if node.type == :send && !node.children[1].nil?
+            method_name = node.children[1].to_s
+
+            # 一般的なRubyメソッドやプライベートメソッドは除外
+            unless %w[new initialize attr_reader attr_writer attr_accessor private protected public].include?(method_name)
+              dependencies << method_name
+            end
+          end
+
+          # 子ノードを再帰的に処理
+          node.children.each do |child|
+            extract_method_calls(child, dependencies)
+          end
         end
 
         # コードベース全体をチャンクに分割する
