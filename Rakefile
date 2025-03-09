@@ -8,6 +8,58 @@ RSpec::Core::RakeTask.new(:spec)
 task default: :spec
 
 namespace :rag do
+  desc "Calculate token count for a directory"
+  task :calculate_tokens do
+    if ARGV.length < 2
+      puts "エラー: 引数が不足しています"
+      puts "使用方法: bundle exec rake rag:calculate_tokens DIRECTORY"
+      exit 1
+    end
+
+    directory = ARGV[1]
+
+    # 引数を処理した後、ARGVをクリアする（他のタスクが実行されないように）
+    ARGV.each { |a| task a.to_sym do ; end }
+
+    puts "#{directory} のトークン数を計算しています..."
+
+    # 直接Rubyコードを実行
+    require "codebase_rag"
+
+    # コードベースをチャンクに分割
+    begin
+      chunks = CodebaseRag::Domain::Services::Chunker.chunk_codebase(directory)
+
+      # 各チャンクのトークン数を合計
+      total_tokens = chunks.sum(&:token_count)
+
+      # 結果を表示
+      puts "合計チャンク数: #{chunks.length}"
+      puts "合計トークン数: #{total_tokens}"
+
+      # チャンクタイプ別の統計
+      chunk_types = chunks.group_by(&:type)
+      puts "\nチャンクタイプ別の統計:"
+      chunk_types.each do |type, type_chunks|
+        type_tokens = type_chunks.sum(&:token_count)
+        puts "  #{type}: #{type_chunks.length}チャンク, #{type_tokens}トークン"
+      end
+
+      # ファイル拡張子別の統計
+      file_extensions = chunks.group_by { |chunk| File.extname(chunk.file_path) }
+      puts "\nファイル拡張子別の統計:"
+      file_extensions.each do |ext, ext_chunks|
+        ext_name = ext.empty? ? "(拡張子なし)" : ext
+        ext_tokens = ext_chunks.sum(&:token_count)
+        puts "  #{ext_name}: #{ext_chunks.length}チャンク, #{ext_tokens}トークン"
+      end
+    rescue => e
+      puts "エラーが発生しました: #{e.message}"
+      puts e.backtrace.join("\n")
+      exit 1
+    end
+  end
+
   desc "Build RAG system"
   task :build do
     if ARGV.length < 3
