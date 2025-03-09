@@ -30,6 +30,18 @@ module CodebaseRag
         # @return [String] コンテキスト情報
         attr_reader :context
 
+        # @return [Integer, nil] 分割された場合のパート番号
+        attr_reader :part_number
+
+        # @return [Integer, nil] 分割された場合の総パート数
+        attr_reader :total_parts
+
+        # @return [String, nil] 分割元のチャンクID
+        attr_reader :original_chunk_id
+
+        # @return [Integer] トークン数
+        attr_reader :token_count
+
         # 初期化
         # @param options [Hash] オプション
         # @option options [String] :id チャンクのID
@@ -40,6 +52,9 @@ module CodebaseRag
         # @option options [String] :type チャンクの種類
         # @option options [String] :name チャンクの名前
         # @option options [String] :context コンテキスト情報
+        # @option options [Integer] :part_number 分割された場合のパート番号
+        # @option options [Integer] :total_parts 分割された場合の総パート数
+        # @option options [String] :original_chunk_id 分割元のチャンクID
         def initialize(options)
           @id = options[:id]
           @content = options[:content]
@@ -49,6 +64,16 @@ module CodebaseRag
           @type = options[:type]
           @name = options[:name]
           @context = options[:context]
+          @part_number = options[:part_number]
+          @total_parts = options[:total_parts]
+          @original_chunk_id = options[:original_chunk_id]
+          @token_count = calculate_token_count(@content)
+        end
+
+        # チャンクが分割されたものかどうか
+        # @return [Boolean] 分割されたチャンクかどうか
+        def part?
+          !@part_number.nil? && !@total_parts.nil?
         end
 
         # メタデータを取得
@@ -59,7 +84,11 @@ module CodebaseRag
             start_line: @start_line,
             end_line: @end_line,
             type: @type,
-            name: @name
+            name: @name,
+            part_number: @part_number,
+            total_parts: @total_parts,
+            original_chunk_id: @original_chunk_id,
+            token_count: @token_count
           }
         end
 
@@ -84,8 +113,22 @@ module CodebaseRag
             end_line: @end_line,
             type: @type,
             name: @name,
-            context: @context
+            context: @context,
+            part_number: @part_number,
+            total_parts: @total_parts,
+            original_chunk_id: @original_chunk_id,
+            token_count: @token_count
           }
+        end
+
+        private
+
+        # トークン数を計算（3文字で1トークン）
+        # @param text [String] テキスト
+        # @return [Integer] トークン数
+        def calculate_token_count(text)
+          return 0 if text.nil? || text.empty?
+          (text.length / 3.0).ceil
         end
       end
     end

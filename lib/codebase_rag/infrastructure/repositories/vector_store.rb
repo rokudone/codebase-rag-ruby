@@ -104,7 +104,10 @@ module CodebaseRag
               end_line: chunk_data[:end_line],
               type: chunk_data[:type],
               name: chunk_data[:name],
-              context: chunk_data[:context]
+              context: chunk_data[:context],
+              part_number: chunk_data[:part_number],
+              total_parts: chunk_data[:total_parts],
+              original_chunk_id: chunk_data[:original_chunk_id]
             )
             @chunks[chunk.id] = chunk
           end

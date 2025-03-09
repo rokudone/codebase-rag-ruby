@@ -10,7 +10,20 @@ module CodebaseRag
       # コードチャンカー
       # Rubyコードを解析して意味のある単位でチャンクに分割するサービス
       module Chunker
+        # 最大トークン数（7000を超えないようにする）
+        MAX_TOKENS = 7000
+
         module_function
+
+        # テキストのトークン数を概算する（3文字で1トークン）
+        # @param text [String] テキスト
+        # @return [Integer] トークン数
+        def estimate_token_count(text)
+          return 0 if text.nil? || text.empty?
+
+          # 3文字で1トークンとして計算
+          (text.length / 3.0).ceil
+        end
 
         # 指定されたディレクトリ内のすべてのRubyファイルとMarkdownファイルを検索する
         # @param root_dir [String] 検索対象のルートディレクトリ
@@ -43,13 +56,50 @@ module CodebaseRag
           hash[0, 12] # 短いIDを使用
         end
 
+        # チャンクを分割する
+        # @param chunk [CodebaseRag::Domain::Entities::CodeChunk] 分割対象のチャンク
+        # @return [Array<CodebaseRag::Domain::Entities::CodeChunk>] 分割されたチャンクの配列
+        def split_chunk(chunk)
+          # 行単位で分割
+          lines = chunk.content.split("\n")
+          chunks = []
+
+          # 必要な分割数を計算
+          num_parts = (chunk.token_count / MAX_TOKENS.to_f).ceil
+          lines_per_part = (lines.size / num_parts.to_f).ceil
+
+          # 分割して新しいチャンクを作成
+          parts = lines.each_slice(lines_per_part).to_a
+          parts.each_with_index do |part_lines, index|
+            part_start_line = chunk.start_line + (index * lines_per_part)
+            part_end_line = [part_start_line + part_lines.size - 1, chunk.end_line].min
+            part_content = part_lines.join("\n")
+
+            chunks << CodebaseRag::Domain::Entities::CodeChunk.new(
+              id: generate_chunk_id(chunk.file_path, part_content, part_start_line, part_end_line),
+              content: part_content,
+              file_path: chunk.file_path,
+              start_line: part_start_line,
+              end_line: part_end_line,
+              type: chunk.type,
+              name: chunk.name,
+              context: chunk.context,
+              part_number: index + 1,
+              total_parts: parts.size,
+              original_chunk_id: chunk.id
+            )
+          end
+
+          chunks
+        end
+
         # ファイルをチャンクに分割する
         # @param file_path [String] ファイルパス
         # @return [Array<CodebaseRag::Domain::Entities::CodeChunk>] チャンクの配列
         def parse_file_to_chunks(file_path)
           content = File.read(file_path)
           lines = content.split("\n")
-          chunks = []
+          initial_chunks = []
 
           begin
             # ASTパーサーを使用してファイルを解析
@@ -59,26 +109,39 @@ module CodebaseRag
             ast = parser.parse(buffer)
 
             # ASTからチャンクを抽出
-            extract_chunks_from_ast(ast, file_path, lines, chunks)
+            extract_chunks_from_ast(ast, file_path, lines, initial_chunks)
           rescue => e
             puts "ファイル #{file_path} の解析中にエラーが発生しました: #{e.message}"
           end
 
           # ファイル全体も1つのチャンクとして追加
           if lines.length > 0
-            chunks << CodebaseRag::Domain::Entities::CodeChunk.new(
+            initial_chunks << CodebaseRag::Domain::Entities::CodeChunk.new(
               id: generate_chunk_id(file_path, content, 1, lines.length),
               content: content,
               file_path: file_path,
               start_line: 1,
               end_line: lines.length,
-              type: "other",
+              type: "file",
               name: File.basename(file_path),
               context: "Full file #{File.basename(file_path)}"
             )
           end
 
-          chunks
+          # 各チャンクのトークン数をチェックし、必要に応じて分割
+          result_chunks = []
+          initial_chunks.each do |chunk|
+            if chunk.token_count <= MAX_TOKENS
+              # トークン数が制限以下なら、そのまま追加
+              result_chunks << chunk
+            else
+              # トークン数が制限を超える場合は、分割したチャンクを追加（元のチャンクは追加しない）
+              split_chunks = split_chunk(chunk)
+              result_chunks.concat(split_chunks)
+            end
+          end
+
+          result_chunks
         end
 
         # ASTからチャンクを抽出する

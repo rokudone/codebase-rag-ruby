@@ -53,45 +53,87 @@ module CodebaseRag
         # @param texts [Array<Hash>] テキストの配列（id, contentを含むハッシュ）
         # @return [Array<CodebaseRag::Domain::Entities::EmbeddingResult>] エンベディング結果の配列
         def generate_batch_embeddings(texts)
-          # 小さなバッチに分割して処理（APIの制限を考慮）
-          batch_size = 10
+          # トークン制限の80%を目標とする
+          max_tokens_per_batch = (8192 * 0.8).to_i
           results = []
 
-          texts.each_slice(batch_size) do |batch|
-            batch_texts = batch.map { |text| text[:content] }
-            batch_ids = batch.map { |text| text[:id] }
+          # 動的バッチ処理
+          current_batch = []
+          current_batch_ids = []
+          current_batch_tokens = 0
 
-            puts "エンベディングを生成中: #{batch_ids.first} など #{batch.size}件"
+          texts.each do |text|
+            # テキストのトークン数を概算（3文字で1トークン）
+            text_tokens = estimate_token_count(text[:content])
 
-            # バッチリクエスト
-            response = client.post("/v1/embeddings") do |req|
-              req.headers["Content-Type"] = "application/json"
-              req.body = {
-                model: @model_name,
-                input: batch_texts
-              }.to_json
+            # 現在のバッチにテキストを追加するとトークン制限を超える場合
+            if current_batch_tokens + text_tokens > max_tokens_per_batch && !current_batch.empty?
+              # 現在のバッチを処理
+              process_batch(current_batch, current_batch_ids, results)
+
+              # 新しいバッチを開始
+              current_batch = []
+              current_batch_ids = []
+              current_batch_tokens = 0
             end
 
-            if response.status == 200
-              data = JSON.parse(response.body, symbolize_names: true)
+            # テキストをバッチに追加
+            current_batch << text[:content]
+            current_batch_ids << text[:id]
+            current_batch_tokens += text_tokens
+          end
 
-              # 各テキストのエンベディングを取得
-              data[:data].each_with_index do |item, index|
-                embedding = item[:embedding]
-                results << CodebaseRag::Domain::Entities::EmbeddingResult.new(
-                  batch_ids[index],
-                  embedding
-                )
-              end
-            else
-              raise response.inspect
-            end
+          # 残りのバッチを処理
+          unless current_batch.empty?
+            process_batch(current_batch, current_batch_ids, results)
           end
 
           results
         end
 
         private
+
+        # バッチを処理する
+        # @param batch [Array<String>] テキストの配列
+        # @param batch_ids [Array<String>] テキストIDの配列
+        # @param results [Array<CodebaseRag::Domain::Entities::EmbeddingResult>] 結果を格納する配列
+        # @return [void]
+        def process_batch(batch, batch_ids, results)
+          puts "エンベディングを生成中: #{batch_ids.first} など #{batch.size}件"
+
+          # バッチリクエスト
+          response = client.post("/v1/embeddings") do |req|
+            req.headers["Content-Type"] = "application/json"
+            req.body = {
+              model: @model_name,
+              input: batch
+            }.to_json
+          end
+
+          if response.status == 200
+            data = JSON.parse(response.body, symbolize_names: true)
+
+            # 各テキストのエンベディングを取得
+            data[:data].each_with_index do |item, index|
+              embedding = item[:embedding]
+              results << CodebaseRag::Domain::Entities::EmbeddingResult.new(
+                batch_ids[index],
+                embedding
+              )
+            end
+          else
+            pp batch
+            raise response.body
+          end
+        end
+
+        # テキストのトークン数を概算する（3文字で1トークン）
+        # @param text [String] テキスト
+        # @return [Integer] トークン数
+        def estimate_token_count(text)
+          return 0 if text.nil? || text.empty?
+          (text.length / 3.0).ceil
+        end
 
         # Faradayクライアントを取得
         # @return [Faraday::Connection] Faradayクライアント

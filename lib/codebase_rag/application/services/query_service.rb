@@ -48,17 +48,45 @@ module CodebaseRag
             context_parts = []
             current_length = 0
 
+            # 分割されたチャンクを元のチャンクIDでグループ化
+            chunk_groups = {}
             relevant_chunks.each do |chunk|
               next if chunk.nil?
 
-              chunk_context = "ファイル: #{chunk.file_path}\n行: #{chunk.start_line}-#{chunk.end_line}\n種類: #{chunk.type}\n名前: #{chunk.name}\n\n#{chunk.content}"
-              chunk_length = chunk_context.length / 4 # 文字数からトークン数を大まかに推定
-
-              if current_length + chunk_length <= @max_context_length
-                context_parts << chunk_context
-                current_length += chunk_length
+              # 分割されたチャンクの場合
+              if chunk.part?
+                group_key = chunk.original_chunk_id || chunk.id
+                chunk_groups[group_key] ||= []
+                chunk_groups[group_key] << chunk
               else
-                break
+                # 分割されていないチャンクの場合
+                chunk_groups[chunk.id] = [chunk]
+              end
+            end
+
+            # グループごとに処理
+            chunk_groups.each do |_, chunks|
+              # パート番号でソート
+              chunks.sort_by! { |c| c.part_number || 0 }
+
+              chunks.each do |chunk|
+                # チャンク情報を構築
+                chunk_context = "ファイル: #{chunk.file_path}\n行: #{chunk.start_line}-#{chunk.end_line}\n種類: #{chunk.type}\n名前: #{chunk.name}"
+
+                # 分割情報がある場合は追加
+                if chunk.part?
+                  chunk_context += "\n分割: #{chunk.part_number}/#{chunk.total_parts}"
+                end
+
+                chunk_context += "\n\n#{chunk.content}"
+                chunk_length = chunk_context.length / 3 # 3文字で1トークンとして計算
+
+                if current_length + chunk_length <= @max_context_length
+                  context_parts << chunk_context
+                  current_length += chunk_length
+                else
+                  break
+                end
               end
             end
 

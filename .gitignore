@@ -2,7 +2,7 @@
 .env
 
 # RAGデータディレクトリ
-rag-data/
+rag-data*
 
 # Ruby関連
 *.gem
