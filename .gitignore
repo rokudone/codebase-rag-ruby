@@ -1,0 +1,36 @@
+# 環境変数ファイル
+.env
+
+# RAGデータディレクトリ
+rag-data/
+
+# Ruby関連
+*.gem
+*.rbc
+/.config
+/coverage/
+/InstalledFiles
+/pkg/
+/spec/reports/
+/spec/examples.txt
+/test/tmp/
+/test/version_tmp/
+/tmp/
+
+# ドキュメント
+/.yardoc/
+/_yardoc/
+/doc/
+/rdoc/
+
+# 依存関係
+/.bundle/
+/vendor/bundle
+/lib/bundler/man/
+
+# ログファイル
+*.log
+
+# OS固有のファイル
+.DS_Store
+Thumbs.db
